@@ -12,7 +12,7 @@ This integration reads the Legrand eco-meter (ref. 412000) directly on your loca
 
 1. Give the eco-meter a fixed DHCP lease on your router. Its address is used as the device identifier: changing it would create a new device in Gladys.
 2. Enter that address in the configuration field (for example `192.168.1.140`).
-3. Adjust the refresh interval if needed (60 seconds by default, 10 seconds minimum).
+3. Adjust the refresh interval if needed (60 seconds by default, from 1 second to 60 seconds).
 4. Use the **Test the connection** button to check that the device answers before running a discovery.
 
 ## Notes

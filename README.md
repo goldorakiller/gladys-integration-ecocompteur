@@ -1,12 +1,35 @@
-# gladys-integration-ecocompteur
+# Écocompteur Legrand — intégration Gladys Assistant
 
-Intégration externe [Gladys Assistant](https://gladysassistant.com) pour l'**écocompteur Legrand** (réf. 412000), construite sur le template officiel et le SDK JavaScript.
+[![CI](https://github.com/goldorakiller/gladys-integration-ecocompteur/actions/workflows/ci.yml/badge.svg)](https://github.com/goldorakiller/gladys-integration-ecocompteur/actions/workflows/ci.yml)
+[![Image GHCR](https://img.shields.io/badge/ghcr.io-gladys--integration--ecocompteur-blue)](https://github.com/goldorakiller/gladys-integration-ecocompteur/pkgs/container/gladys-integration-ecocompteur)
+[![Licence Apache-2.0](https://img.shields.io/badge/licence-Apache--2.0-informational)](LICENSE)
 
-Elle interroge l'appareil en HTTP sur le réseau local et publie dans Gladys :
+Intégration externe [Gladys Assistant](https://gladysassistant.com) pour l'**écocompteur Legrand** (réf. 412000). Elle lit l'appareil en HTTP sur votre réseau local — aucun compte, aucun cloud, aucune clé d'API — et publie ses mesures comme des appareils Gladys normaux.
 
-- la puissance instantanée des 5 tores (W), nommés d'après les libellés de l'écocompteur ;
-- les index téléinfo HC/HP ou Base (kWh), selon l'option tarifaire détectée ;
-- les entrées à impulsions activées (gaz, eau), en volume (m³).
+<p align="center"><img src="cover.png" alt="Écocompteur Legrand" width="500"></p>
+
+## Ce que ça publie dans Gladys
+
+- La **puissance instantanée des 5 tores**, avec les libellés que vous avez saisis sur l'écocompteur lui-même (pas de renommage à refaire côté Gladys).
+- Les **index téléinformation** (heures creuses / heures pleines, Tempo, ou index Base), en kWh — l'option tarifaire est détectée automatiquement sur l'appareil.
+- Les **entrées à impulsions** (gaz, eau) réellement activées sur l'écocompteur, en volume (m³).
+- Le tarif en cours, l'option tarifaire et l'intensité souscrite, à titre indicatif.
+
+Rien n'est codé en dur : adresse, tarif, câblage et libellés viennent tous de votre propre appareil. Voir la [documentation complète](docs/fr.md) pour le détail de la configuration.
+
+## Prérequis
+
+- Un écocompteur Legrand 412000 accessible en HTTP sur le réseau local (`/inst.json` et `/data.json`).
+- Un **bail DHCP fixe** pour cet appareil, recommandé : son adresse IP sert d'identifiant unique côté Gladys.
+- Gladys Assistant ≥ 4.86.0.
+
+## Installation
+
+Une fois le dépôt indexé par le catalogue Gladys (le topic GitHub `gladys-assistant-integration` est posé), l'intégration est installable en un clic depuis **Intégrations → Store** dans Gladys. En attendant l'indexation, ou pour tester une version précise, elle s'installe aussi manuellement en **mode développeur** :
+
+1. Ouvrez [Intégrations → Installer depuis GitHub → Mode développeur](https://gladysassistant.com) dans Gladys.
+2. Renseignez l'image Docker `ghcr.io/goldorakiller/gladys-integration-ecocompteur:1.0.0` (ou `:latest`).
+3. Collez le [manifest](gladys-assistant-integration.json) de ce dépôt dans le champ prévu.
 
 ## Structure
 
@@ -25,9 +48,12 @@ test/                                 tests unitaires (node --test)
 
 ```bash
 npm install
-npm test        # 10 tests, dont un polling complet sur des réponses réelles
-npm run lint
-npm run format
+npm test               # tests unitaires (node --test)
+npm run lint            # ESLint
+npm run format          # Prettier
+
+# Sonde le matériel réel sans passer par Gladys ni Docker :
+ECO_HOST=192.168.1.140 npm run probe
 ```
 
 Pour lancer l'intégration hors conteneur, contre une instance Gladys :
@@ -40,14 +66,11 @@ LOG_LEVEL=debug \
 npm start
 ```
 
-## Publication
+Construite sur le [template officiel JavaScript](https://github.com/GladysAssistant/integration-template-js) et le [SDK](https://github.com/GladysAssistant/integration-sdk-js) `@gladysassistant/integration-sdk`.
 
-1. Remplacer `REPLACE_ME` dans `gladys-assistant-integration.json` par le compte GitHub propriétaire du dépôt.
-2. Ajouter une image `cover.png` (800×534 px max, 150 Ko max) à la racine.
-3. Ajouter le topic GitHub `gladys-assistant-integration` au dépôt.
-4. Lancer le workflow de release : il bumpe la version, crée le tag et publie l'image multi-arch sur GHCR.
+## Publier une nouvelle version
 
-L'indexeur Gladys découvre les dépôts portant ce topic, valide le manifest et rend l'intégration visible dans le catalogue de toutes les instances, en général dans l'heure.
+Depuis GitHub : **Actions → Release → Run workflow**, choisir `patch`/`minor`/`major`. Le workflow bumpe la version (`package.json` + manifest), pousse le tag `vX.Y.Z` et publie l'image multi-arch (`linux/amd64` + `linux/arm64`) sur `ghcr.io`.
 
 ## Licence
 

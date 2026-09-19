@@ -12,7 +12,7 @@ Cette intégration lit l'écocompteur Legrand (réf. 412000) directement sur vot
 
 1. Donnez à votre écocompteur un bail DHCP fixe sur votre box. Son adresse sert d'identifiant : la changer créerait un nouvel appareil dans Gladys.
 2. Saisissez cette adresse dans le champ prévu (par exemple `192.168.1.140`).
-3. Ajustez l'intervalle de rafraîchissement si besoin (60 secondes par défaut, 10 secondes minimum).
+3. Ajustez l'intervalle de rafraîchissement si besoin (60 secondes par défaut, de 1 seconde à 60 secondes).
 4. Utilisez le bouton **Tester la connexion** pour vérifier que l'appareil répond avant de lancer la découverte.
 
 ## Remarques
