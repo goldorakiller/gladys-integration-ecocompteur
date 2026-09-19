@@ -1,0 +1,10 @@
+node_modules/
+npm-debug.log*
+.env
+.env.*
+data/
+*.log
+.DS_Store
+
+# Notes de dev internes (contexte de session Claude Code) — jamais publiques.
+CLAUDE.md
