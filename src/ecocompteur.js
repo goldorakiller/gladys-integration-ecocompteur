@@ -114,12 +114,19 @@ export async function fetchMetadata(host) {
   };
 }
 
-// Codes `option_tarifaire` de l'écocompteur Legrand (mêmes valeurs que le champ
-// téléinfo Linky du même nom) : 1 = Heures Creuses/Pleines, 4 = Tempo. Tout
-// le reste (0 = Base, options non gérées ici) retombe sur un simple index Base.
+// Codes `option_tarifaire` : encodage interne au firmware Legrand, distinct du
+// champ télé-information brut OPTARIF (voir CLAUDE.md) — 1 = Heures
+// Creuses/Pleines (confirmé), 2 = Tempo (confirmé le 2026-09-20 sur un vrai
+// compteur en TIC historique, retour utilisateur "mutmut" avec /data.json à
+// l'appui : les 6 index couleur conso_hc_b/hp_b/hc_w/hp_w/hc_r/hp_r étaient
+// bien peuplés alors que l'intégration détectait « base »). 4 est conservé en
+// plus par prudence : jamais observé sur un vrai appareil, seulement supposé
+// à l'origine par analogie avec le NTARF Enedis standard, qui ne régit pas ce
+// champ. Tout le reste (0 = Base, EJP non géré) retombe sur un simple index
+// Base.
 function tariffFromOption(optionTarifaire) {
   const option = Number(optionTarifaire);
   if (option === 1) return 'hchp';
-  if (option === 4) return 'tempo';
+  if (option === 2 || option === 4) return 'tempo';
   return 'base';
 }

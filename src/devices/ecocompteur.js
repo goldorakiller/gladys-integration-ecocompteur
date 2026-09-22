@@ -22,6 +22,42 @@ const DEVICE_TYPE = 'ecocompteur';
 
 const logger = createLogger({ name: DEVICE_TYPE });
 
+// Table de correspondance des codes `option_tarifaire`. 1 (HC/HP) et 2
+// (Tempo) confirmés par des retours utilisateurs réels sur de vrais appareils
+// (voir CLAUDE.md) ; 0 (Base) déduit par élimination, jamais observé
+// directement. Code inconnu -> valeur brute affichée telle quelle plutôt
+// qu'une étiquette inventée.
+const OPTION_TARIFAIRE_LABELS = {
+  0: 'Base',
+  1: 'HC/HP',
+  2: 'Tempo',
+};
+
+// Table de correspondance des codes `tarif_courant` (période tarifaire en
+// cours). 1, 2, 8 et 9 confirmés par observation réelle (heure + calendrier
+// Tempo du jour cohérents) ; 0, 3-7 et 10 déduits par un motif logique (Base,
+// EJP, puis Tempo HC et HP x3 couleurs) mais jamais observés sur un vrai
+// appareil — à corriger si un retour utilisateur les contredit.
+const TARIF_COURANT_LABELS = {
+  0: 'Base',
+  1: 'Heure Creuse',
+  2: 'Heure Pleine',
+  3: 'Heures Normales (EJP)',
+  4: 'Heures de Pointe Mobile (EJP)',
+  5: 'Heure Creuse Bleu',
+  6: 'Heure Creuse Blanc',
+  7: 'Heure Creuse Rouge',
+  8: 'Heure Pleine Bleu',
+  9: 'Heure Pleine Blanc',
+  10: 'Heure Pleine Rouge',
+};
+
+/** Libellé lisible pour un code, ou le code brut si absent de la table. */
+function readableLabel(table, rawValue) {
+  const code = Number(rawValue);
+  return table[code] ?? String(rawValue);
+}
+
 // Métadonnées de repli tant que l'écocompteur n'a pas été interrogé.
 const FALLBACK_METADATA = {
   circuits: [1, 2, 3, 4, 5].map((i) => ({
@@ -104,23 +140,27 @@ function volumeFeature(ids, key, name) {
 }
 
 /**
- * Feature « tarif en cours » : correspond au champ standard téléinfo Linky
- * NTARF (« numéro de l'index tarifaire en cours »), pas un détournement de
- * catégorie — l'écocompteur Legrand expose la même notion sous `tarif_courant`.
- * Code brut publié tel quel (pas de décodage HC/HP fiable trouvé dans la doc
- * Legrand ni chez Enedis pour toutes les options tarifaires) : à confronter au
- * besoin avec l'affichage de l'écocompteur à un instant HC/HP connu.
+ * Feature « tarif en cours » (`tarif_courant`) : période tarifaire active
+ * (Heure Creuse/Pleine, ou couleur Tempo). Publiée en texte lisible
+ * (`readableLabel`, voir `TARIF_COURANT_LABELS`) plutôt qu'avec le type SDK
+ * `teleinformation/ntarf` — ce dernier affiche un badge « NTARF » dans
+ * Gladys, un sigle Enedis qui ne veut rien dire pour l'utilisateur final.
  */
 function tariffPeriodFeature(ids) {
   return {
     name: 'Tarif en cours',
     external_id: ids.feature('tarif-courant'),
-    category: DEVICE_FEATURE_CATEGORIES.TELEINFORMATION,
-    type: DEVICE_FEATURE_TYPES.TELEINFORMATION.NTARF,
+    category: DEVICE_FEATURE_CATEGORIES.TEXT,
+    type: DEVICE_FEATURE_TYPES.TEXT.TEXT,
+    // Voir commentaire de tariffOptionFeature : min/max NOT NULL en base
+    // même pour une feature TEXT, sans effet fonctionnel ici.
     min: 0,
-    max: 99,
+    max: 0,
     read_only: true,
     has_feedback: false,
+    // Contrairement à Option tarifaire (contrat, quasi constant), celle-ci
+    // change plusieurs fois par jour (HC/HP, ou les 6 combinaisons Tempo) :
+    // l'historique a un vrai intérêt ici.
     keep_history: true,
   };
 }
@@ -182,10 +222,15 @@ const TEMPO_INDEXES = [
   { key: 'index-hp-rouge', field: 'conso_hp_r', name: 'Index Heures Pleines Rouge' },
 ];
 
-/** Wh -> kWh, arrondi au dixième. */
+// Wh -> kWh, arrondi au millième (3 décimales). Les index bruts de
+// l'écocompteur sont des Wh entiers exacts : diviser par 1000 est une
+// conversion sans perte à cette précision, contrairement à l'ancien
+// arrondi au dixième de kWh (résolution 100 Wh) qui écrasait inutilement
+// la précision réelle disponible — et donc celle du calcul de consommation
+// 30 min de Gladys, basé sur le delta entre deux relevés successifs.
 function toKilowattHour(wattHours) {
   const value = Number(wattHours);
-  return Number.isFinite(value) ? Math.round(value / 100) / 10 : null;
+  return Number.isFinite(value) ? Math.round(value) / 1000 : null;
 }
 
 export const ecocompteur = {
@@ -266,17 +311,16 @@ export const ecocompteur = {
     if (config.publish_indexes) {
       const data = await fetchData(config.host);
 
-      const tarifCourant = Number(data.tarif_courant);
-      if (Number.isFinite(tarifCourant)) {
-        states.push({
-          device_feature_external_id: ids.feature('tarif-courant'),
-          state: tarifCourant,
-        });
-      }
-
       // Features TEXT : le serveur exige le champ `text` (chaîne), jamais
       // `state` — réservé aux valeurs numériques (voir saveStates.js côté
       // cœur Gladys, qui valide l'un ou l'autre mais pas une chaîne sous `state`).
+      if (data.tarif_courant !== undefined) {
+        states.push({
+          device_feature_external_id: ids.feature('tarif-courant'),
+          text: readableLabel(TARIF_COURANT_LABELS, data.tarif_courant),
+        });
+      }
+
       const isousc = Number(data.isousc);
       if (Number.isFinite(isousc)) {
         states.push({
@@ -285,11 +329,10 @@ export const ecocompteur = {
         });
       }
 
-      const optionTarifaire = Number(data.option_tarifaire);
-      if (Number.isFinite(optionTarifaire)) {
+      if (data.option_tarifaire !== undefined) {
         states.push({
           device_feature_external_id: ids.feature('option-tarifaire'),
-          text: String(optionTarifaire),
+          text: readableLabel(OPTION_TARIFAIRE_LABELS, data.option_tarifaire),
         });
       }
 
@@ -323,4 +366,10 @@ export const ecocompteur = {
 };
 
 // Exporté pour les tests unitaires.
-export const internals = { toKilowattHour, platformId };
+export const internals = {
+  toKilowattHour,
+  platformId,
+  readableLabel,
+  OPTION_TARIFAIRE_LABELS,
+  TARIF_COURANT_LABELS,
+};

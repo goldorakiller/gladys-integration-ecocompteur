@@ -45,26 +45,27 @@ const DATA_JSON = `{
 	"entree_imp1_disabled" : 0
 }`;
 
-// Aucun écocompteur en option tarifaire Tempo sous la main pour capturer une
-// vraie réponse : structure conforme à la doc, valeurs synthétiques (zéros en
-// tête inclus, pour exercer le même correctif JSON que le fixture HC/HP).
+// Vraie réponse d'un écocompteur en option Tempo (TIC historique), capturée
+// par un utilisateur ("mutmut" sur le forum Gladys, 2026-09-20) — c'est ce
+// retour qui a révélé que option_tarifaire vaut 2 en Tempo sur ce firmware,
+// pas 4 comme supposé à l'origine sans jamais avoir été vérifié.
 const DATA_JSON_TEMPO = `{
-	"option_tarifaire" : 4,
-	"tarif_courant" : 11,
-	"isousc" : 30,
+	"option_tarifaire" : 2,
+	"tarif_courant" : 8,
+	"isousc" : 60,
 	"conso_base" : 0,
 	"conso_hc"   : 0,
 	"conso_hp"   : 0,
-	"conso_hc_b" : 05000000,
-	"conso_hp_b" : 04000000,
-	"conso_hc_w" : 02000000,
-	"conso_hp_w" : 01500000,
-	"conso_hc_r" : 00300000,
-	"conso_hp_r" : 00200000,
-	"label_entree1" : "Chauffage",
-	"label_entree2" : "Eau chaude",
-	"label_entree3" : "Prises de Courant",
-	"label_entree4" : "Prises de Courant",
+	"conso_hc_b" : 015354084,
+	"conso_hp_b" : 007357072,
+	"conso_hc_w" : 001951145,
+	"conso_hp_w" : 000923760,
+	"conso_hc_r" : 000913850,
+	"conso_hp_r" : 000335072,
+	"label_entree1" : "Eau chaude",
+	"label_entree2" : "Refroidissement",
+	"label_entree3" : "Chauffage",
+	"label_entree4" : "Borne recharge",
 	"label_entree5" : "Prises de Courant"
 }`;
 
@@ -86,6 +87,9 @@ const config = normalizeConfig({ host: '192.168.1.140' });
 
 test('tariffFromOption reconnaît HC/HP, Tempo et Base', () => {
   assert.equal(ecocompteurInternals.tariffFromOption(1), 'hchp');
+  // 2 = Tempo confirmé sur un vrai compteur (retour utilisateur, TIC
+  // historique). 4 = jamais observé, conservé par prudence seulement.
+  assert.equal(ecocompteurInternals.tariffFromOption(2), 'tempo');
   assert.equal(ecocompteurInternals.tariffFromOption(4), 'tempo');
   assert.equal(ecocompteurInternals.tariffFromOption(0), 'base');
   assert.equal(ecocompteurInternals.tariffFromOption(undefined), 'base');
@@ -151,10 +155,18 @@ test("le blueprint se retrouve depuis l'external_id de l'appareil", () => {
   assert.equal(findBlueprintByDevice(gladys, device, config), ecocompteur);
 });
 
-test('les Wh sont convertis en kWh au dixième', () => {
-  assert.equal(internals.toKilowattHour(12323332), 12323.3);
+test('les Wh sont convertis en kWh sans perte (au millième)', () => {
+  assert.equal(internals.toKilowattHour(12323332), 12323.332);
   assert.equal(internals.toKilowattHour(0), 0);
   assert.equal(internals.toKilowattHour('abc'), null);
+});
+
+test('readableLabel traduit un code connu, et retombe sur le code brut sinon', () => {
+  assert.equal(internals.readableLabel(internals.OPTION_TARIFAIRE_LABELS, 1), 'HC/HP');
+  assert.equal(internals.readableLabel(internals.OPTION_TARIFAIRE_LABELS, 2), 'Tempo');
+  assert.equal(internals.readableLabel(internals.OPTION_TARIFAIRE_LABELS, 99), '99');
+  assert.equal(internals.readableLabel(internals.TARIF_COURANT_LABELS, 8), 'Heure Pleine Bleu');
+  assert.equal(internals.readableLabel(internals.TARIF_COURANT_LABELS, undefined), 'undefined');
 });
 
 test('la fréquence de polling est ramenée à la valeur permise la plus proche', () => {
@@ -194,9 +206,10 @@ test('onPoll publie une valeur par tore, plus index et volume', async () => {
   assert.equal(byId[`${prefix}:circuit1`], 470);
   assert.equal(byId[`${prefix}:circuit2`], 91);
   assert.equal(byId[`${prefix}:pulse1-volume`], 3.456);
-  assert.equal(byId[`${prefix}:index-hc`], 12323.3);
-  assert.equal(byId[`${prefix}:index-hp`], 11201.3);
-  assert.equal(byId[`${prefix}:tarif-courant`], 2);
+  assert.equal(byId[`${prefix}:index-hc`], 12323.332);
+  assert.equal(byId[`${prefix}:index-hp`], 11201.263);
+  assert.equal(byId[`${prefix}:tarif-courant`], 'Heure Pleine');
+  assert.equal(byId[`${prefix}:option-tarifaire`], 'HC/HP');
   assert.equal(byId[`${prefix}:abonnement`], '45');
 });
 
@@ -228,12 +241,12 @@ test('Tempo : découverte et publication des 6 index couleur', async () => {
     gladys.published.map((p) => [p.featureExternalId, p.state ?? p.text]),
   );
   const prefix = 'ecocompteur:192.168.1.140';
-  assert.equal(byId[`${prefix}:index-hc-bleu`], 5000);
-  assert.equal(byId[`${prefix}:index-hp-bleu`], 4000);
-  assert.equal(byId[`${prefix}:index-hc-blanc`], 2000);
-  assert.equal(byId[`${prefix}:index-hp-blanc`], 1500);
-  assert.equal(byId[`${prefix}:index-hc-rouge`], 300);
-  assert.equal(byId[`${prefix}:index-hp-rouge`], 200);
-  assert.equal(byId[`${prefix}:option-tarifaire`], '4');
-  assert.equal(byId[`${prefix}:tarif-courant`], 11);
+  assert.equal(byId[`${prefix}:index-hc-bleu`], 15354.084);
+  assert.equal(byId[`${prefix}:index-hp-bleu`], 7357.072);
+  assert.equal(byId[`${prefix}:index-hc-blanc`], 1951.145);
+  assert.equal(byId[`${prefix}:index-hp-blanc`], 923.76);
+  assert.equal(byId[`${prefix}:index-hc-rouge`], 913.85);
+  assert.equal(byId[`${prefix}:index-hp-rouge`], 335.072);
+  assert.equal(byId[`${prefix}:option-tarifaire`], 'Tempo');
+  assert.equal(byId[`${prefix}:tarif-courant`], 'Heure Pleine Bleu');
 });

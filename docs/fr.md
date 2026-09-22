@@ -5,8 +5,26 @@ Cette intégration lit l'écocompteur Legrand (réf. 412000) directement sur vot
 ## Ce qui remonte dans Gladys
 
 - **Puissance instantanée des 5 tores**, en watts. Les features reprennent les libellés que vous avez saisis dans l'interface de l'écocompteur : si votre entrée 1 s'appelle « Chauffage », elle s'appelle « Chauffage » dans Gladys.
-- **Index du compteur** issus de la téléinformation : heures creuses et heures pleines, ou index base selon votre option tarifaire (détectée automatiquement). En kWh.
+- **Index du compteur** issus de la téléinformation : heures creuses et heures pleines, index Tempo (6 couleurs) ou index base selon votre option tarifaire (détectée automatiquement). En kWh.
+- **Option tarifaire** et **Tarif en cours** en texte lisible (« HC/HP », « Tempo », « Heure Pleine Bleu »...) plutôt qu'en code numérique brut.
 - **Entrées à impulsions** (gaz, eau) : seules celles activées dans l'écocompteur sont créées, avec leur volume en m³.
+
+## Suivi de consommation et coût (option Tempo)
+
+Chaque index créé (heures creuses, heures pleines, ou l'une des 6 combinaisons Tempo) est une véritable feature « Index » Gladys : le cœur Gladys y ajoute automatiquement une feature « Consommation 30 minutes » et une feature « Coût 30 minutes », sans rien à faire côté configuration de l'intégration — seule une grille tarifaire dans Paramètres → Énergie est nécessaire pour que le coût se calcule.
+
+En option Tempo, ça donne **6 index distincts**, chacun avec son propre suivi consommation/coût :
+
+| Index                      | Période                    |
+| -------------------------- | -------------------------- |
+| Index Heures Creuses Bleu  | Heures creuses, jour bleu  |
+| Index Heures Pleines Bleu  | Heures pleines, jour bleu  |
+| Index Heures Creuses Blanc | Heures creuses, jour blanc |
+| Index Heures Pleines Blanc | Heures pleines, jour blanc |
+| Index Heures Creuses Rouge | Heures creuses, jour rouge |
+| Index Heures Pleines Rouge | Heures pleines, jour rouge |
+
+Gladys connaît lui-même le calendrier officiel des jours Tempo : il n'a pas besoin de l'écocompteur pour savoir quelle couleur s'applique quel jour, seulement des prix associés à chaque combinaison couleur/créneau.
 
 ## Configuration
 
