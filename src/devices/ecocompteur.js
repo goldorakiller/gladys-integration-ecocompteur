@@ -3,6 +3,7 @@
 //
 // Un seul appareil physique, avec :
 //   - 5 features « puissance » (les 5 tores de mesure)
+//   - 5 index d'énergie reconstruits à partir de ces puissances (circuitEnergy)
 //   - les index téléinfo (HC/HP, ou Base selon l'option tarifaire)
 //   - les entrées à impulsions activées (gaz, eau), en index et en volume
 //
@@ -15,8 +16,10 @@ import {
   DEVICE_FEATURE_CATEGORIES,
   DEVICE_FEATURE_TYPES,
   DEVICE_FEATURE_UNITS,
+  WIDGET_COLORS,
 } from '@gladysassistant/integration-sdk';
 import { fetchInstant, fetchData } from '../ecocompteur.js';
+import { createCircuitEnergy } from '../circuitEnergy.js';
 
 const DEVICE_TYPE = 'ecocompteur';
 
@@ -52,6 +55,22 @@ const TARIF_COURANT_LABELS = {
   10: 'Heure Pleine Rouge',
 };
 
+// Couleur du statut « Tarif en cours » du widget : la couleur Tempo du jour,
+// sinon heures creuses en vert et heures pleines en orange.
+const TARIF_COURANT_COLORS = {
+  0: WIDGET_COLORS.NEUTRAL,
+  1: WIDGET_COLORS.SUCCESS,
+  2: WIDGET_COLORS.WARNING,
+  3: WIDGET_COLORS.SUCCESS,
+  4: WIDGET_COLORS.DANGER,
+  5: WIDGET_COLORS.INFO,
+  6: WIDGET_COLORS.NEUTRAL,
+  7: WIDGET_COLORS.DANGER,
+  8: WIDGET_COLORS.INFO,
+  9: WIDGET_COLORS.NEUTRAL,
+  10: WIDGET_COLORS.DANGER,
+};
+
 /** Libellé lisible pour un code, ou le code brut si absent de la table. */
 function readableLabel(table, rawValue) {
   const code = Number(rawValue);
@@ -70,6 +89,9 @@ const FALLBACK_METADATA = {
 };
 
 let metadata = FALLBACK_METADATA;
+let circuitEnergy = createCircuitEnergy();
+// Derniers relevés, pour le widget (qui ne réinterroge pas l'écocompteur).
+let lastReadings = { instant: null, data: null };
 
 /** Injecte les métadonnées lues sur l'appareil (appelé avant la découverte). */
 export function setMetadata(next) {
@@ -79,6 +101,16 @@ export function setMetadata(next) {
 /** Métadonnées courantes (exposé pour les tests). */
 export function getMetadata() {
   return metadata;
+}
+
+export function getCircuitEnergy() {
+  return circuitEnergy;
+}
+
+/** Remplace l'accumulateur (tests : dossier temporaire au lieu de /data). */
+export function setCircuitEnergy(next) {
+  circuitEnergy = next;
+  lastReadings = { instant: null, data: null };
 }
 
 /**
@@ -243,6 +275,9 @@ export const ecocompteur = {
   buildDevice(gladys, config) {
     const ids = gladys.externalIds(DEVICE_TYPE, platformId(config));
     const features = metadata.circuits.map((circuit) => powerFeature(ids, circuit));
+    for (const circuit of metadata.circuits) {
+      features.push(indexFeature(ids, `${circuit.key}-energy`, `${circuit.name} (énergie)`));
+    }
 
     if (config.publish_indexes) {
       features.push(tariffPeriodFeature(ids));
@@ -289,14 +324,77 @@ export const ecocompteur = {
     },
   },
 
+  // Widgets de tableau de bord (clé = `key` du manifest).
+  widgets: {
+    live_power(gladys, { config }) {
+      const ids = gladys.externalIds(DEVICE_TYPE, platformId(config));
+      // Tuiles liées aux features : Gladys les met à jour en direct. Sans
+      // `label`, il afficherait le nom de l'appareil sur les cinq.
+      const components = metadata.circuits.map((circuit) => ({
+        type: 'value',
+        label: circuit.name,
+        device_feature: ids.feature(circuit.key),
+      }));
+
+      const { instant, data } = lastReadings;
+      if (instant) {
+        const total = metadata.circuits.reduce(
+          (sum, circuit) => sum + Math.max(0, Number(instant[circuit.field]) || 0),
+          0,
+        );
+        components.push({
+          type: 'value',
+          label: 'Total',
+          value: Math.round(total),
+          unit: 'W',
+          icon: 'zap',
+          color: WIDGET_COLORS.PRIMARY,
+        });
+      }
+      if (data?.tarif_courant !== undefined) {
+        components.push({
+          type: 'status',
+          items: [
+            {
+              label: { en: 'Current tariff', fr: 'Tarif en cours' },
+              value: readableLabel(TARIF_COURANT_LABELS, data.tarif_courant),
+              color: TARIF_COURANT_COLORS[Number(data.tarif_courant)] ?? WIDGET_COLORS.NEUTRAL,
+            },
+          ],
+        });
+      }
+
+      // Le total et le tarif viennent du dernier poll : inutile de les
+      // redemander plus souvent que l'écocompteur n'est interrogé.
+      return { ttl_seconds: Math.max(10, Number(config.poll_frequency) || 60), components };
+    },
+  },
+
   async onPoll(gladys, config) {
     const ids = gladys.externalIds(DEVICE_TYPE, platformId(config));
     const inst = await fetchInstant(config.host);
+    // `data` n'est remis que si les index sont publiés : sinon le widget
+    // garderait un tarif périmé après désactivation de l'option.
+    lastReadings = { instant: inst, data: null };
 
     const states = metadata.circuits.map((circuit) => ({
       device_feature_external_id: ids.feature(circuit.key),
       state: Math.round(Number(inst[circuit.field] || 0)),
     }));
+
+    const energyKwh = circuitEnergy.addSample(
+      Object.fromEntries(
+        metadata.circuits.map((circuit) => [
+          ids.feature(`${circuit.key}-energy`),
+          Number(inst[circuit.field] || 0),
+        ]),
+      ),
+      Date.now(),
+    );
+    for (const [externalId, kwh] of Object.entries(energyKwh)) {
+      states.push({ device_feature_external_id: externalId, state: kwh });
+    }
+    await circuitEnergy.persist();
 
     for (const pulse of metadata.pulses) {
       const volume = Number(inst[pulse.volumeField]);
@@ -310,6 +408,7 @@ export const ecocompteur = {
 
     if (config.publish_indexes) {
       const data = await fetchData(config.host);
+      lastReadings.data = data;
 
       // Features TEXT : le serveur exige le champ `text` (chaîne), jamais
       // `state` — réservé aux valeurs numériques (voir saveStates.js côté

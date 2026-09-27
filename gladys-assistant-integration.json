@@ -8,14 +8,10 @@
   },
   "version": "1.2.0",
   "docker_image": "ghcr.io/goldorakiller/gladys-integration-ecocompteur:1.2.0",
-  "gladys_version": ">=4.86.0",
+  "gladys_version": ">=5.1.0",
   "cover_image": "https://raw.githubusercontent.com/goldorakiller/gladys-integration-ecocompteur/main/cover.png",
-  "categories": [
-    "energy"
-  ],
-  "transports": [
-    "local"
-  ],
+  "categories": ["energy"],
+  "transports": ["local"],
   "config_schema": [
     {
       "key": "intro",
@@ -113,6 +109,20 @@
       },
       "required": false,
       "default": true
+    }
+  ],
+  "widgets": [
+    {
+      "key": "live_power",
+      "label": {
+        "en": "Live power",
+        "fr": "Puissance en direct"
+      },
+      "description": {
+        "en": "Power of the 5 channels, their total and the current tariff period.",
+        "fr": "Puissance des 5 tores, leur total et le tarif en cours."
+      },
+      "icon": "zap"
     }
   ],
   "actions": [

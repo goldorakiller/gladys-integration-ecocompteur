@@ -7,7 +7,27 @@ This integration reads the Legrand eco-meter (ref. 412000) directly on your loca
 - **Instantaneous power of the 5 measurement channels**, in watts. Feature names come from the labels you set in the eco-meter's own interface: if input 1 is named "Heating" there, it is named "Heating" in Gladys.
 - **Meter indexes** read from the teleinformation stream: off-peak/peak, the 6 Tempo colour indexes, or the base index depending on your tariff option (detected automatically). Reported in kWh.
 - **Tariff option** and **current tariff period** as readable text ("HC/HP", "Tempo", "Heure Pleine Bleu"...) rather than a raw numeric code.
+- **Energy consumed per channel**, in kWh ("Heating (énergie)"...), see below.
 - **Pulse inputs** (gas, water): only the ones enabled on the device are created, with their volume in m³.
+
+## Energy per channel
+
+The eco-meter only reports the instantaneous power of its channels, never a cumulative meter. The integration therefore builds an energy index for each channel by integrating the power between two readings. Like the teleinformation indexes, these indexes automatically get their "30-minute consumption" and "30-minute cost": you can track the cost of your heat pump or your EV charger on its own.
+
+Good to know:
+
+- The index starts at 0 when the integration is installed: it is a relative total, not the real lifetime history of the circuit. Gladys only looks at differences, so consumption and cost are not affected.
+- It is an approximation: an appliance that switches on and off between two readings is counted more or less accurately. The shorter the refresh interval, the more accurate the result.
+- If the eco-meter stays unreachable for more than 5 minutes, that period is not counted: the integration would rather under-count than invent consumption.
+- The total is saved and survives a restart of the integration.
+
+## "Live power" widget
+
+The integration provides a dashboard widget (Gladys 5.1 or later). Add it from the dashboard editor, in the integration's section. It shows:
+
+- the power of the 5 channels, updated live;
+- their total;
+- the current tariff period, coloured by period (blue, white or red with Tempo, green for off-peak, orange for peak).
 
 ## Consumption and cost tracking (Tempo option)
 
@@ -36,5 +56,5 @@ Gladys knows the official Tempo day calendar itself: it does not need the eco-me
 ## Notes
 
 - The eco-meter returns its indexes with leading zeros, which is not valid JSON; the integration normalizes the payload before parsing it.
-- Channel labels are re-read on every discovery: rename an input on the eco-meter, run a discovery again, and the names are updated in Gladys.
+- Channel labels are taken from the eco-meter **when the device is created** in Gladys. Once the device exists, its names belong to Gladys (like the device name or its room): renaming an input on the eco-meter afterwards does not update them. Rename the feature directly in Gladys, or delete and re-create the device from the Discovery tab (which loses its history).
 - An unwired channel reports 0 W permanently. You can delete the matching feature in Gladys if it gets in the way.

@@ -1,15 +1,38 @@
-import { test } from 'node:test';
+import { beforeEach, test } from 'node:test';
 import assert from 'node:assert/strict';
-import { DEVICE_FEATURE_CATEGORIES, DEVICE_FEATURE_TYPES } from '@gladysassistant/integration-sdk';
+import { mkdtemp } from 'node:fs/promises';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
+import {
+  DEVICE_FEATURE_CATEGORIES,
+  DEVICE_FEATURE_TYPES,
+  DEVICE_FEATURE_UNITS,
+  WIDGET_COLORS,
+  validateWidgetContent,
+} from '@gladysassistant/integration-sdk';
 import {
   parseEcocompteurJson,
   baseUrl,
   internals as ecocompteurInternals,
 } from '../src/ecocompteur.js';
-import { ecocompteur, setMetadata, internals } from '../src/devices/ecocompteur.js';
+import {
+  ecocompteur,
+  setMetadata,
+  setCircuitEnergy,
+  internals,
+} from '../src/devices/ecocompteur.js';
+import { createCircuitEnergy } from '../src/circuitEnergy.js';
 import { buildDiscoveredDevices, findBlueprintByDevice } from '../src/devices/index.js';
 import { normalizeConfig } from '../src/config.js';
 import { createFakeGladys } from './helpers/fakeGladys.js';
+
+// Jamais /data pendant les tests : un dossier temporaire, un accumulateur
+// neuf (et des derniers relevés vides) avant chaque test.
+beforeEach(async () => {
+  setCircuitEnergy(
+    createCircuitEnergy({ dataDir: await mkdtemp(join(tmpdir(), 'ecocompteur-test-')) }),
+  );
+});
 
 // Réponses réelles d'un écocompteur (capturées sur l'appareil).
 const INST_JSON = `{
@@ -211,6 +234,9 @@ test('onPoll publie une valeur par tore, plus index et volume', async () => {
   assert.equal(byId[`${prefix}:tarif-courant`], 'Heure Pleine');
   assert.equal(byId[`${prefix}:option-tarifaire`], 'HC/HP');
   assert.equal(byId[`${prefix}:abonnement`], '45');
+  // Premier relevé : il sert de référence, l'énergie par tore part de 0.
+  assert.equal(byId[`${prefix}:circuit1-energy`], 0);
+  assert.equal(byId[`${prefix}:circuit5-energy`], 0);
 });
 
 test('Tempo : découverte et publication des 6 index couleur', async () => {
@@ -249,4 +275,77 @@ test('Tempo : découverte et publication des 6 index couleur', async () => {
   assert.equal(byId[`${prefix}:index-hp-rouge`], 335.072);
   assert.equal(byId[`${prefix}:option-tarifaire`], 'Tempo');
   assert.equal(byId[`${prefix}:tarif-courant`], 'Heure Pleine Bleu');
+});
+
+async function pollWith(gladys, dataJson) {
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async (url) => ({
+    ok: true,
+    status: 200,
+    text: async () => (String(url).endsWith('/inst.json') ? INST_JSON : dataJson),
+  });
+  try {
+    await ecocompteur.onPoll(gladys, config);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+}
+
+test("chaque tore a un index d'énergie, que Gladys peut suivre en consommation/coût", () => {
+  setMetadata(METADATA);
+  const [device] = buildDiscoveredDevices(createFakeGladys(), config);
+  const energyFeatures = device.features.filter((f) => f.external_id.endsWith('-energy'));
+  assert.equal(energyFeatures.length, 5);
+  for (const feature of energyFeatures) {
+    assert.equal(feature.category, DEVICE_FEATURE_CATEGORIES.ENERGY_SENSOR);
+    assert.equal(feature.type, DEVICE_FEATURE_TYPES.ENERGY_SENSOR.INDEX);
+    assert.equal(feature.unit, DEVICE_FEATURE_UNITS.KILOWATT_HOUR);
+    assert.equal(feature.keep_history, true);
+  }
+  assert.equal(energyFeatures[0].name, 'Chauffage (énergie)');
+});
+
+test('widget : avant tout relevé, seules les 5 tuiles liées aux features', () => {
+  setMetadata(METADATA);
+  const content = ecocompteur.widgets.live_power(createFakeGladys(), { config });
+  assert.deepEqual(validateWidgetContent(content), []);
+  assert.equal(content.components.length, 5);
+  assert.deepEqual(content.components[0], {
+    type: 'value',
+    label: 'Chauffage',
+    device_feature: 'ecocompteur:192.168.1.140:circuit1',
+  });
+});
+
+test('widget : après un relevé, total et tarif en cours colorés', async () => {
+  setMetadata(METADATA_TEMPO);
+  const gladys = createFakeGladys();
+  await pollWith(gladys, DATA_JSON_TEMPO);
+
+  const content = ecocompteur.widgets.live_power(gladys, { config });
+  assert.deepEqual(validateWidgetContent(content), []);
+  const total = content.components.find((c) => c.label === 'Total');
+  assert.equal(total.value, 470 + 91); // data1 + data2 de INST_JSON
+  const status = content.components.find((c) => c.type === 'status');
+  assert.equal(status.items[0].value, 'Heure Pleine Bleu');
+  assert.equal(status.items[0].color, WIDGET_COLORS.INFO);
+  assert.equal(content.ttl_seconds, 60);
+});
+
+test("widget : plus de tarif affiché une fois l'option « Publier les index » désactivée", async () => {
+  setMetadata(METADATA_TEMPO);
+  const gladys = createFakeGladys();
+  await pollWith(gladys, DATA_JSON_TEMPO);
+
+  const withoutIndexes = normalizeConfig({ host: '192.168.1.140', publish_indexes: false });
+  const realFetch = globalThis.fetch;
+  globalThis.fetch = async () => ({ ok: true, status: 200, text: async () => INST_JSON });
+  try {
+    await ecocompteur.onPoll(gladys, withoutIndexes);
+  } finally {
+    globalThis.fetch = realFetch;
+  }
+
+  const content = ecocompteur.widgets.live_power(gladys, { config: withoutIndexes });
+  assert.ok(!content.components.some((c) => c.type === 'status'));
 });

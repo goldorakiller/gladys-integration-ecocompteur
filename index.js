@@ -17,7 +17,7 @@
 import { GladysIntegration, logger } from '@gladysassistant/integration-sdk';
 import { normalizeConfig } from './src/config.js';
 import { fetchMetadata } from './src/ecocompteur.js';
-import { setMetadata } from './src/devices/ecocompteur.js';
+import { getCircuitEnergy, setMetadata } from './src/devices/ecocompteur.js';
 import {
   DEVICE_BLUEPRINTS,
   buildDiscoveredDevices,
@@ -67,6 +67,13 @@ for (const blueprint of DEVICE_BLUEPRINTS) {
   }
 }
 
+// --- Widgets de tableau de bord ----------------------------------------------
+for (const blueprint of DEVICE_BLUEPRINTS) {
+  for (const [widgetKey, handler] of Object.entries(blueprint.widgets ?? {})) {
+    gladys.onWidgetGet(widgetKey, () => handler(gladys, { config }));
+  }
+}
+
 // --- Configuration modifiée par l'utilisateur --------------------------------
 gladys.onConfigUpdated(async (newConfig) => {
   logger.info('onConfigUpdated -> nouvelle configuration reçue');
@@ -109,12 +116,14 @@ async function reportFailure(err) {
 }
 
 // --- Arrêt propre -------------------------------------------------------------
-gladys.handleShutdown((signal) => {
+gladys.handleShutdown(async (signal) => {
   logger.info(`Signal ${signal} reçu -> arrêt propre`);
+  await getCircuitEnergy().persist({ force: true });
 });
 
 // --- Démarrage ----------------------------------------------------------------
 logger.info("Démarrage de l'intégration Écocompteur Legrand...");
+await getCircuitEnergy().load();
 gladys.connect().catch((err) => {
   logger.error('Connexion initiale échouée', err);
   process.exit(1);

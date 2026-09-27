@@ -7,7 +7,27 @@ Cette intégration lit l'écocompteur Legrand (réf. 412000) directement sur vot
 - **Puissance instantanée des 5 tores**, en watts. Les features reprennent les libellés que vous avez saisis dans l'interface de l'écocompteur : si votre entrée 1 s'appelle « Chauffage », elle s'appelle « Chauffage » dans Gladys.
 - **Index du compteur** issus de la téléinformation : heures creuses et heures pleines, index Tempo (6 couleurs) ou index base selon votre option tarifaire (détectée automatiquement). En kWh.
 - **Option tarifaire** et **Tarif en cours** en texte lisible (« HC/HP », « Tempo », « Heure Pleine Bleu »...) plutôt qu'en code numérique brut.
+- **Énergie consommée par tore**, en kWh (« Chauffage (énergie) »...), voir plus bas.
 - **Entrées à impulsions** (gaz, eau) : seules celles activées dans l'écocompteur sont créées, avec leur volume en m³.
+
+## Énergie par tore
+
+L'écocompteur ne fournit que la puissance instantanée de ses tores, jamais un compteur cumulé. L'intégration reconstruit donc un index d'énergie pour chaque tore, en intégrant la puissance entre deux relevés. Comme les index téléinfo, ces index reçoivent automatiquement leur « Consommation 30 minutes » et leur « Coût 30 minutes » : vous pouvez suivre le coût de votre pompe à chaleur ou de votre borne de recharge séparément.
+
+À savoir :
+
+- L'index démarre à 0 à l'installation : c'est un cumul relatif, pas l'historique réel du circuit. Gladys ne regarde que les différences, ça n'a pas d'incidence sur la consommation ni sur le coût.
+- C'est une approximation : un appareil qui s'allume et s'éteint entre deux relevés est plus ou moins bien compté. Plus l'intervalle de rafraîchissement est court, plus le résultat est précis.
+- Si l'écocompteur reste injoignable plus de 5 minutes, cette période n'est pas comptée : l'intégration préfère sous-estimer plutôt qu'inventer une consommation.
+- Le cumul est sauvegardé et survit au redémarrage de l'intégration.
+
+## Widget « Puissance en direct »
+
+L'intégration fournit un widget de tableau de bord (Gladys 5.1 minimum). Ajoutez-le depuis l'éditeur de tableau de bord, dans la section de l'intégration. Il affiche :
+
+- la puissance des 5 tores, mise à jour en direct ;
+- leur total ;
+- le tarif en cours, coloré selon la période (bleu, blanc ou rouge en Tempo, vert en heures creuses, orange en heures pleines).
 
 ## Suivi de consommation et coût (option Tempo)
 
@@ -36,5 +56,5 @@ Gladys connaît lui-même le calendrier officiel des jours Tempo : il n'a pas be
 ## Remarques
 
 - L'écocompteur renvoie ses index avec des zéros en tête, ce qui n'est pas du JSON valide ; l'intégration normalise la réponse avant de la parser.
-- Les libellés des tores sont relus à chaque découverte : renommer une entrée dans l'écocompteur puis relancer une découverte met à jour les noms dans Gladys.
+- Les libellés des tores sont repris de l'écocompteur **à la création de l'appareil** dans Gladys. Une fois l'appareil créé, ses noms appartiennent à Gladys (comme le nom de l'appareil ou sa pièce) : renommer une entrée dans l'écocompteur ensuite ne les met pas à jour. Renommez la fonctionnalité directement dans Gladys, ou supprimez puis recréez l'appareil depuis l'onglet Découverte (ce qui fait perdre son historique).
 - Un tore non câblé renvoie 0 W en permanence. Vous pouvez supprimer la feature correspondante dans Gladys si elle vous encombre.

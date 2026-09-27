@@ -10,10 +10,12 @@ Intégration externe [Gladys Assistant](https://gladysassistant.com) pour l'**é
 
 ## Ce que ça publie dans Gladys
 
-- La **puissance instantanée des 5 tores**, avec les libellés que vous avez saisis sur l'écocompteur lui-même (pas de renommage à refaire côté Gladys).
+- La **puissance instantanée des 5 tores**, avec les libellés que vous avez saisis sur l'écocompteur lui-même, repris à la création de l'appareil (pas de renommage à faire côté Gladys au départ).
+- Un **index d'énergie par tore** (kWh), reconstruit à partir de la puissance : Gladys en tire la consommation et le coût de chaque circuit.
 - Les **index téléinformation** (heures creuses / heures pleines, Tempo, ou index Base), en kWh — l'option tarifaire est détectée automatiquement sur l'appareil.
 - Les **entrées à impulsions** (gaz, eau) réellement activées sur l'écocompteur, en volume (m³).
 - Le tarif en cours, l'option tarifaire et l'intensité souscrite, à titre indicatif.
+- Un **widget de tableau de bord** « Puissance en direct » : les 5 tores, leur total et le tarif en cours.
 
 Rien n'est codé en dur : adresse, tarif, câblage et libellés viennent tous de votre propre appareil. Voir la [documentation complète](docs/fr.md) pour le détail de la configuration.
 
@@ -21,7 +23,7 @@ Rien n'est codé en dur : adresse, tarif, câblage et libellés viennent tous de
 
 - Un écocompteur Legrand 412000 accessible en HTTP sur le réseau local (`/inst.json` et `/data.json`).
 - Un **bail DHCP fixe** pour cet appareil, recommandé : son adresse IP sert d'identifiant unique côté Gladys.
-- Gladys Assistant ≥ 4.86.0.
+- Gladys Assistant ≥ 5.1.0 (widgets de tableau de bord).
 
 ## Installation
 
